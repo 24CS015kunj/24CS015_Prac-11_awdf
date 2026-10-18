@@ -5,11 +5,12 @@
 **Faculty:** Faculty of Technology and Engineering (DEPSTAR / CSPIT)  
 **Department:** B.Tech (IT / CE / CSE / AIML)  
 **CO/PO Mapping:** CO5 / PO3, PO5  
+**GitHub Repository:** [24CS015_Prac-11_awdf](https://github.com/24CS015kunj/24CS015_Prac-11_awdf.git)
 
 ---
 
 ## 🎯 Objective
-To containerize a full-stack Task Management application (React frontend, Node/Express backend, and MongoDB database) using Docker and orchestrate all multi-container services seamlessly using Docker Compose.
+To containerize a full-stack Task Management application (React frontend, Node/Express backend, and MongoDB database) using Docker and orchestrate all multi-container services seamlessly using Docker Compose with persistent data storage and inter-container networking.
 
 ---
 
@@ -32,14 +33,17 @@ To containerize a full-stack Task Management application (React frontend, Node/E
            │                            │                            │
      Host: 5173                   Host: 5000                   Named Volume
                                                               (mongo-data)
+                                        │
+                                        └──(Dual-Sync)──► Host Windows MongoDB
+                                                          (MongoDB Compass: 27017)
 ```
 
 ### Services Overview
 | Service | Image / Build Context | Container Port | Host Port | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | **`mongodb`** | `mongo:latest` | `27017` | `27017` | Official MongoDB document database with persistent named volume (`mongo-data`). |
-| **`backend`** | `./backend/Dockerfile` (`node:18`) | `5000` | `5000` | Express REST API connected to MongoDB via `mongodb://mongodb:27017/taskdb`. |
-| **`frontend`** | `./frontend/Dockerfile` (`node:18`) | `5173` | `5173` | React (Vite) single-page client built & served via `preview --host 0.0.0.0 --port 5173`. |
+| **`backend`** | `./backend/Dockerfile` (`node:18`) | `5000` | `5000` | Express REST API connected to MongoDB via `mongodb://mongodb:27017/taskmanager` with dual-sync for live Compass updates. |
+| **`frontend`** | `./frontend/Dockerfile` (`node:18`) | `5173` | `5173` | React 18 (Vite) single-page client served via `preview --host 0.0.0.0 --port 5173`. |
 
 ---
 
@@ -48,15 +52,16 @@ To containerize a full-stack Task Management application (React frontend, Node/E
 ```
 Practical-11/
 ├── .dockerignore              # Root-level ignore rules for Docker context
+├── .gitignore                 # Git ignore rules for node_modules and logs
 ├── docker-compose.yml         # Multi-container orchestration definition
 ├── README.md                  # Comprehensive documentation and viva analysis
 ├── backend/
 │   ├── .dockerignore          # Excludes node_modules, .env, and local git
 │   ├── Dockerfile             # Backend container image recipe (node:18)
-│   ├── package.json           # Express, Mongoose, CORS, Dotenv
-│   ├── server.js              # REST API & MongoDB connection logic
+│   ├── package.json           # Express, Mongoose, CORS, Dotenv, scripts
+│   ├── server.js              # REST API & dual-sync MongoDB connection logic
 │   └── models/
-│       └── Task.js            # Mongoose Schema for tasks
+│       └── Task.js            # Mongoose Schema (title, description, priority, completed)
 └── frontend/
     ├── .dockerignore          # Excludes node_modules, dist, .env
     ├── Dockerfile             # Multi-stage frontend container image recipe
@@ -65,7 +70,7 @@ Practical-11/
     ├── vite.config.js         # Configured for host 0.0.0.0 binding
     └── src/
         ├── api.js             # API helper for Backend REST communication
-        ├── App.jsx            # Interactive Task Management UI component
+        ├── App.jsx            # Interactive Task Management UI (Add, Edit, Delete, Priority)
         ├── index.css          # Modern glassmorphism UI styles
         └── main.jsx           # React DOM root render
 ```
@@ -85,10 +90,6 @@ Practical-11/
 ### 1-Step Execution (Single Command)
 Run the entire stack with automatic build and container creation:
 ```bash
-docker-compose up --build
-```
-*To run in detached (background) mode:*
-```bash
 docker-compose up -d --build
 ```
 
@@ -96,16 +97,16 @@ docker-compose up -d --build
 - **Frontend Web UI:** [http://localhost:5173](http://localhost:5173)
 - **Backend API Root / Healthcheck:** [http://localhost:5000](http://localhost:5000)
 - **Backend Tasks Endpoint:** [http://localhost:5000/tasks](http://localhost:5000/tasks)
-- **MongoDB Database:** `mongodb://localhost:27017/taskdb`
+- **MongoDB Database:** `mongodb://localhost:27017/taskmanager`
 
 ### Verifying Running Containers
 ```bash
 docker ps
 ```
-You should see all 3 containers active:
-- `task_frontend` (Status: Up, Ports: `0.0.0.0:5173->5173/tcp`)
-- `task_backend` (Status: Up, Ports: `0.0.0.0:5000->5000/tcp`)
-- `task_mongodb` (Status: Up, Ports: `0.0.0.0:27017->27017/tcp`)
+All 3 containers should be in `Up` status:
+- `task_frontend` (Ports: `0.0.0.0:5173->5173/tcp`)
+- `task_backend` (Ports: `0.0.0.0:5000->5000/tcp`)
+- `task_mongodb` (Ports: `0.0.0.0:27017->27017/tcp`)
 
 ### Stopping the Stack
 ```bash
@@ -118,16 +119,50 @@ docker-compose down -v
 
 ---
 
-## 🧪 Supplementary Features Implemented
+## 📡 REST API Endpoints
 
-1. **`.dockerignore` Optimization:**
+| Method | Endpoint | Description | Request Body |
+| :--- | :--- | :--- | :--- |
+| **`GET`** | `/` | API Healthcheck & MongoDB connection status | None |
+| **`GET`** | `/tasks` | Retrieve all tasks from `taskmanager` DB | None |
+| **`POST`** | `/tasks` | Create a new task in `taskmanager` DB | `{ title, description, priority }` |
+| **`PUT`** | `/tasks/:id` | Update an existing task (title, desc, priority, completed) | `{ title, description, priority, completed }` |
+| **`DELETE`**| `/tasks/:id` | Delete a task from MongoDB | None |
+
+---
+
+## 🧪 Key Features & Practical Highlights
+
+1. **Full CRUD with Live Database Reflection:**
+   - Supports creating, viewing, editing/updating, and deleting tasks.
+   - Includes task `priority` flags (`low`, `medium`, `high`) and completion toggles.
+2. **MongoDB Compass Live Synchronization:**
+   - Features dual-sync capability: changes performed on the web UI immediately update both the containerized database and the host Windows MongoDB service, reflecting live in MongoDB Compass (`127.0.0.1:27017 > taskmanager > tasks`).
+3. **`.dockerignore` Optimization:**
    - Both root and subfolder build contexts explicitly exclude `node_modules`, `.env`, `dist`, and `.git` to prevent build context bloat and speed up image building.
-2. **Multi-Stage Build Pattern:**
-   - The React frontend utilizes a multi-stage build structure (`FROM node:18 AS build`) compiling dependencies and serving via Vite preview.
-3. **Named Volume Persistence for MongoDB:**
-   - Configured `mongo-data:/data/db` under the `mongodb` service so task data persists intact across container restarts and updates.
-4. **Isolated Bridge Network (`app-network`):**
+4. **Multi-Stage Build Pattern:**
+   - The React frontend utilizes a build stage (`FROM node:18 AS build`) compiling dependencies and serving via Vite preview.
+5. **Named Volume Persistence for MongoDB:**
+   - Configured `mongo-data:/data/db` under the `mongodb` service so task data persists across container restarts.
+6. **Isolated Bridge Network (`app-network`):**
    - Inter-container communication is established across a dedicated user-defined bridge network with automatic internal DNS resolution.
+
+---
+
+## 📸 Screenshots Checklist for Lab Submission
+
+The following screenshots are prepared for inclusion in the practical lab submission file:
+
+| # | Screenshot Name | What to Capture | Lab Evaluation Rubric |
+| :--- | :--- | :--- | :--- |
+| **1** | **Docker Version Verification** | Terminal running `docker --version` and `docker compose version` | Step 1 verification |
+| **2** | **Project Docker Configuration** | VS Code showing `docker-compose.yml`, `backend/Dockerfile`, and `frontend/Dockerfile` | Steps 2, 3 & 4 (Dockerfile & Compose implementation) |
+| **3** | **Single Command Build & Launch** | Terminal showing `docker-compose up -d --build` with all 3 services starting | Problem statement (single command verification) |
+| **4** | **Running Containers (`docker ps`)** | Terminal output of `docker ps` showing `task_frontend` (5173), `task_backend` (5000), and `task_mongodb` (27017) | Step 7 verification |
+| **5** | **Frontend UI in Browser** | Browser at `http://localhost:5173` showing the task manager with badges and task list | Learning outcome & Correctness |
+| **6** | **Task Create & Update Operation** | Adding/Editing a task on the web app showing updated priority and text | Interactive implementation evidence |
+| **7** | **MongoDB Compass Verification** | MongoDB Compass showing the documents in `taskmanager > tasks` with the updated fields | Database persistence verification |
+| **8** | **GitHub Repository Commit** | Browser at GitHub repo `24CS015_Prac-11_awdf` showing the containerization commits | GitHub deliverable requirement |
 
 ---
 
@@ -155,12 +190,12 @@ docker-compose down -v
 
 | Symptom | Likely Cause | Solution / Fix |
 | :--- | :--- | :--- |
-| **Backend cannot connect to MongoDB** | Connection string mistakenly uses `localhost` instead of the Compose service name | Set `MONGO_URI=mongodb://mongodb:27017/taskdb` in `docker-compose.yml` / `server.js`. |
+| **Backend cannot connect to MongoDB** | Connection string mistakenly uses `localhost` instead of the Compose service name | Set `MONGO_URI=mongodb://mongodb:27017/taskmanager` in `docker-compose.yml`. |
 | **Port already in use error** | A previous local service or dangling container is holding port 5000, 5173, or 27017 | Run `docker ps` to find and stop conflicting containers, or kill the host process holding the port. |
 | **Docker build is extremely slow** | Local `node_modules` or `.git` are being copied into Docker build context | Ensure `.dockerignore` exists and contains `node_modules` and `.env`. |
-| **Changes to code not reflected** | Docker is utilizing cached image layers from previous builds | Run `docker-compose up --build` to force fresh image layer compilation. |
+| **Changes to code not reflected** | Docker is utilizing cached image layers from previous builds | Run `docker-compose up -d --build` to force fresh image layer compilation. |
 
 ---
 
 ## 📝 Learning Outcome
-Successfully mastered containerizing full-stack web applications using Docker, writing modular Dockerfiles for both frontend and backend environments, managing persistent data with Docker volumes, configuring bridge network service discovery, and orchestrating the entire multi-tier stack with a single `docker-compose up` command.
+Successfully containerized a full-stack web application using Docker, created modular Dockerfiles for both frontend and backend environments, persisted database records using named Docker volumes, configured bridge network service discovery, and orchestrated the multi-tier application with a single `docker-compose up` command.
